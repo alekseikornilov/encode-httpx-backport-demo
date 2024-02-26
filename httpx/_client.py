@@ -560,6 +560,15 @@ class BaseClient:
 
         return request.stream
 
+    def _set_timeout(self, request: Request) -> None:
+        if "timeout" not in request.extensions:
+            timeout = (
+                self.timeout
+                if isinstance(self.timeout, UseClientDefault)
+                else Timeout(self.timeout)
+            )
+            request.extensions = dict(**request.extensions, timeout=timeout.as_dict())
+
 
 class Client(BaseClient):
     """
@@ -908,6 +917,8 @@ class Client(BaseClient):
             if isinstance(follow_redirects, UseClientDefault)
             else follow_redirects
         )
+
+        self._set_timeout(request)
 
         auth = self._build_request_auth(request, auth)
 
@@ -1655,6 +1666,8 @@ class AsyncClient(BaseClient):
             if isinstance(follow_redirects, UseClientDefault)
             else follow_redirects
         )
+
+        self._set_timeout(request)
 
         auth = self._build_request_auth(request, auth)
 
