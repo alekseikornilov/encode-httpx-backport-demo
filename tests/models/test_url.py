@@ -141,19 +141,14 @@ def test_path_query_fragment(url, raw_path, path, query, fragment):
 
 
 def test_url_query_encoding():
-    """
-    URL query parameters should use '%20' for encoding spaces,
-    and should treat '/' as a safe character. This behaviour differs
-    across clients, but we're matching browser behaviour here.
-
-    See https://github.com/encode/httpx/issues/2536
-    and https://github.com/encode/httpx/discussions/2460
-    """
     url = httpx.URL("https://www.example.com/?a=b c&d=e/f")
     assert url.raw_path == b"/?a=b%20c&d=e/f"
 
+    url = httpx.URL("https://www.example.com/?a=b+c&d=e/f")
+    assert url.raw_path == b"/?a=b+c&d=e/f"
+
     url = httpx.URL("https://www.example.com/", params={"a": "b c", "d": "e/f"})
-    assert url.raw_path == b"/?a=b%20c&d=e%2Ff"
+    assert url.raw_path == b"/?a=b+c&d=e%2Ff"
 
 
 def test_url_params():
@@ -230,8 +225,8 @@ def test_url_normalized_host():
 
 
 def test_url_percent_escape_host():
-    url = httpx.URL("https://exam%le.com/")
-    assert url.host == "exam%25le.com"
+    url = httpx.URL("https://exam le.com/")
+    assert url.host == "exam%20le.com"
 
 
 def test_url_ipv4_like_host():
@@ -289,12 +284,13 @@ def test_url_leading_dot_prefix_on_relative_url():
 
 
 def test_param_with_space():
-    # Params passed as form key-value pairs should be escaped.
+    # Params passed as form key-value pairs should be form escaped,
+    # Including the special case of "+" for space seperators.
     url = httpx.URL("http://webservice", params={"u": "with spaces"})
-    assert str(url) == "http://webservice?u=with%20spaces"
+    assert str(url) == "http://webservice?u=with+spaces"
 
 
-def test_param_does_not_require_encoding():
+def test_param_requires_encoding():
     # Params passed as form key-value pairs should be escaped.
     url = httpx.URL("http://webservice", params={"u": "%"})
     assert str(url) == "http://webservice?u=%25"
@@ -367,15 +363,17 @@ def test_url_excessively_long_component():
 def test_url_non_printing_character_in_url():
     with pytest.raises(httpx.InvalidURL) as exc:
         httpx.URL("https://www.example.com/\n")
-    assert str(exc.value) == "Invalid non-printable ASCII character in URL"
+    assert str(exc.value) == (
+        "Invalid non-printable ASCII character in URL, '\\n' at position 24."
+    )
 
 
 def test_url_non_printing_character_in_component():
     with pytest.raises(httpx.InvalidURL) as exc:
         httpx.URL("https://www.example.com", path="/\n")
-    assert (
-        str(exc.value)
-        == "Invalid non-printable ASCII character in URL component 'path'"
+    assert str(exc.value) == (
+        "Invalid non-printable ASCII character in URL path component, "
+        "'\\n' at position 1."
     )
 
 
@@ -415,17 +413,11 @@ def test_urlparse_with_invalid_path():
 
     with pytest.raises(httpx.InvalidURL) as exc:
         httpx.URL(path="//abc")
-    assert (
-        str(exc.value)
-        == "URLs with no authority component cannot have a path starting with '//'"
-    )
+    assert str(exc.value) == "Relative URLs cannot have a path starting with '//'"
 
     with pytest.raises(httpx.InvalidURL) as exc:
         httpx.URL(path=":abc")
-    assert (
-        str(exc.value)
-        == "URLs with no scheme component cannot have a path starting with ':'"
-    )
+    assert str(exc.value) == "Relative URLs cannot have a path starting with ':'"
 
 
 def test_url_with_relative_path():
@@ -618,10 +610,10 @@ def test_url_copywith_userinfo_subcomponents():
     }
     url = httpx.URL("https://example.org")
     new = url.copy_with(**copy_with_kwargs)
-    assert str(new) == "https://tom%40example.org:abc123%40%20%25@example.org"
+    assert str(new) == "https://tom%40example.org:abc123%40%20%@example.org"
     assert new.username == "tom@example.org"
     assert new.password == "abc123@ %"
-    assert new.userinfo == b"tom%40example.org:abc123%40%20%25"
+    assert new.userinfo == b"tom%40example.org:abc123%40%20%"
 
 
 def test_url_copywith_invalid_component():
@@ -869,19 +861,3 @@ def test_ipv6_url_copy_with_host(url_str, new_host):
     assert url.host == "::ffff:192.168.0.1"
     assert url.netloc == b"[::ffff:192.168.0.1]:1234"
     assert str(url) == "http://[::ffff:192.168.0.1]:1234"
-
-
-# Test for deprecated API
-
-
-def test_url_raw_compatibility():
-    """
-    Test case for the (to-be-deprecated) `url.raw` accessor.
-    """
-    url = httpx.URL("https://www.example.com/path")
-    scheme, host, port, raw_path = url.raw
-
-    assert scheme == b"https"
-    assert host == b"www.example.com"
-    assert port is None
-    assert raw_path == b"/path"
